@@ -27,6 +27,7 @@ type Report struct {
 	MinOS        string            `json:"min_os,omitempty"`
 	Signature    *SignatureInfo    `json:"signature,omitempty"`
 	Entitlements map[string]string `json:"entitlements,omitempty"`
+	Strings      []string          `json:"interesting_strings,omitempty"`
 	Setuid       bool              `json:"setuid,omitempty"`
 	Setgid       bool              `json:"setgid,omitempty"`
 	FileMode     string            `json:"file_mode"`
@@ -212,6 +213,7 @@ func analyzeThin(rep *Report, f *macho.File, fh *os.File, base int64) {
 	}
 
 	parseCodeSignature(rep, fh, f, base)
+	rep.Strings = extractStrings(rep.Path, 60)
 }
 
 func sectionEntropy(s *macho.Section) float64 {

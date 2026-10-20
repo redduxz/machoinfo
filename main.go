@@ -18,6 +18,7 @@ var (
 	flagAll      = flag.Bool("all", false, "scan: include files with no findings")
 	flagFindings = flag.Bool("findings-only", false, "single-file: print only findings")
 	flagProcs    = flag.Bool("procs", false, "triage all running processes")
+	flagDiff     = flag.Bool("diff", false, "diff two binaries: --diff old new")
 )
 
 func usage() {
@@ -41,6 +42,25 @@ func main() {
 
 	if *flagProcs {
 		runProcs()
+		return
+	}
+	if *flagDiff {
+		if len(args) != 2 {
+			usage()
+		}
+		a, err := Analyze(args[0])
+		if err != nil {
+			fatal(err)
+		}
+		b, err := Analyze(args[1])
+		if err != nil {
+			fatal(err)
+		}
+		if *flagJSON {
+			emitJSON(DiffReports(a, b))
+		} else {
+			printDiff(DiffReports(a, b))
+		}
 		return
 	}
 	if len(args) == 0 {

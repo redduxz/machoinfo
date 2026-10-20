@@ -97,6 +97,13 @@ func printReport(r *Report) {
 		}
 	}
 
+	if len(r.Strings) > 0 {
+		fmt.Printf("  interesting strings (%d):\n", len(r.Strings))
+		for _, s := range r.Strings {
+			fmt.Printf("    %s\n", s)
+		}
+	}
+
 	printSummaryLine(r)
 	if len(r.Findings) > 0 {
 		fmt.Printf("  findings:\n")

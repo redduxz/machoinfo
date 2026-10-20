@@ -94,8 +94,9 @@ func parseCodeSignature(rep *Report, fh *os.File, f *macho.File, base int64) {
 		case btype == slotEntitlements && bmagic == csMagicEntitlements:
 			sig.EntBytes = len(blob) - 8
 			rep.Entitlements = decodePlist(blob[8:])
-		case btype == slotDEREntitlements:
-			sig.EntBytes = len(blob) - 8 // DER blob — counted, not decoded
+		case btype == slotDEREntitlements && bmagic == csMagicEntitlementsDER:
+			sig.EntBytes = len(blob) - 8
+			rep.Entitlements = decodeDEREntitlements(blob[8:])
 		case btype == slotSignature && bmagic == csMagicBlobWrapper:
 			sig.HasCMS = true
 		case btype >= 0x1000 && btype < 0x10000:
