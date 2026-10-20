@@ -144,13 +144,13 @@ func printScan(reps []*Report) {
 			continue
 		}
 		flagged++
-		fmt.Printf("%s\n", r.Path)
+		fmt.Printf("%s\n", bold(r.Path))
 		printSummaryLine(r)
 		for _, f := range r.Findings {
-			fmt.Printf("    ⚑ %s\n", f)
+			fmt.Printf("      %s\n", sev(f))
 		}
 	}
-	fmt.Printf("\n%d/%d binaries flagged\n", flagged, len(reps))
+	fmt.Printf("\n%s\n", dim(fmt.Sprintf("%d/%d binaries flagged", flagged, len(reps))))
 }
 
 func emitJSON(v any) {
