@@ -13,7 +13,14 @@ func printReport(r *Report) {
 		fmt.Printf("  flags:   %s\n", strings.Join(r.Flags, " "))
 	}
 	if r.MinOS != "" {
-		fmt.Printf("  min os:  %s\n", r.MinOS)
+		fmt.Printf("  min os:  %s", r.MinOS)
+		if r.Platform != "" {
+			fmt.Printf("  (%s)", r.Platform)
+		}
+		fmt.Println()
+	}
+	if r.Encrypted {
+		fmt.Printf("  !! FairPlay encrypted\n")
 	}
 	if r.UUID != "" {
 		fmt.Printf("  uuid:    %s\n", r.UUID)
@@ -70,6 +77,12 @@ func printReport(r *Report) {
 	if len(r.Dylibs) > 0 {
 		fmt.Printf("  dylibs (%d):\n", len(r.Dylibs))
 		for _, d := range r.Dylibs {
+			fmt.Printf("    %s\n", d)
+		}
+	}
+	if len(r.WeakDylibs) > 0 {
+		fmt.Printf("  weak dylibs (%d):\n", len(r.WeakDylibs))
+		for _, d := range r.WeakDylibs {
 			fmt.Printf("    %s\n", d)
 		}
 	}

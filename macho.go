@@ -25,6 +25,9 @@ type Report struct {
 	Exports      []string          `json:"exports,omitempty"`
 	UUID         string            `json:"uuid,omitempty"`
 	MinOS        string            `json:"min_os,omitempty"`
+	Platform     string            `json:"platform,omitempty"`
+	Encrypted    bool              `json:"encrypted,omitempty"`
+	WeakDylibs   []string          `json:"weak_dylibs,omitempty"`
 	Signature    *SignatureInfo    `json:"signature,omitempty"`
 	Entitlements map[string]string `json:"entitlements,omitempty"`
 	Strings      []string          `json:"interesting_strings,omitempty"`
@@ -206,8 +209,17 @@ func analyzeThin(rep *Report, f *macho.File, fh *os.File, base int64) {
 			}
 		case 0x32: // LC_BUILD_VERSION: platform@8, minos@12
 			if len(raw) >= 16 {
+				rep.Platform = platformName(binary.LittleEndian.Uint32(raw[8:12]))
 				v := binary.LittleEndian.Uint32(raw[12:16])
 				rep.MinOS = fmt.Sprintf("%d.%d.%d", v>>16, (v>>8)&0xff, v&0xff)
+			}
+		case 0x21, 0x2c: // LC_ENCRYPTION_INFO(_64): cryptid@16
+			if len(raw) >= 20 && binary.LittleEndian.Uint32(raw[16:20]) != 0 {
+				rep.Encrypted = true
+			}
+		case 0x80000018: // LC_LOAD_WEAK_DYLIB
+			if off := binary.LittleEndian.Uint32(raw[8:12]); int(off) < len(raw) {
+				rep.WeakDylibs = append(rep.WeakDylibs, cstr(raw[off:]))
 			}
 		}
 	}
@@ -286,6 +298,36 @@ func flagNames(fl uint32) []string {
 		}
 	}
 	return out
+}
+
+func platformName(p uint32) string {
+	switch p {
+	case 1:
+		return "macOS"
+	case 2:
+		return "iOS"
+	case 3:
+		return "tvOS"
+	case 4:
+		return "watchOS"
+	case 5:
+		return "bridgeOS"
+	case 6:
+		return "macCatalyst"
+	case 7:
+		return "iOSSimulator"
+	case 8:
+		return "tvOSSimulator"
+	case 9:
+		return "watchOSSimulator"
+	case 10:
+		return "DriverKit"
+	case 11:
+		return "visionOS"
+	case 12:
+		return "visionOSSimulator"
+	}
+	return fmt.Sprintf("platform(%d)", p)
 }
 
 func protString(p uint32) string {

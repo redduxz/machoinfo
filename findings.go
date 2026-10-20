@@ -32,6 +32,10 @@ func deriveFindings(r *Report) []string {
 		out = append(out, "setgid bit set")
 	}
 
+	if r.Encrypted {
+		out = append(out, "FairPlay-encrypted sections (cryptid set) — static analysis limited")
+	}
+
 	// signature posture
 	if r.Signature == nil || r.Signature.Status == "none" {
 		out = append(out, "unsigned binary")
@@ -84,6 +88,11 @@ func deriveFindings(r *Report) []string {
 				out = append(out, "loads @rpath dylibs — verify rpath dirs are protected")
 				break
 			}
+		}
+	}
+	for _, d := range r.WeakDylibs {
+		if strings.HasPrefix(d, "@rpath") || strings.HasPrefix(d, "@executable_path") {
+			out = append(out, "weak dylib "+d+" — missing file tolerated, hijack primitive")
 		}
 	}
 

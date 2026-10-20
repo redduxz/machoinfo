@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 var (
@@ -163,14 +162,4 @@ func emitJSON(v any) {
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, "machoinfo:", err)
 	os.Exit(1)
-}
-
-// helper used by output.go
-func hasStr(s []string, sub string) bool {
-	for _, x := range s {
-		if strings.Contains(x, sub) {
-			return true
-		}
-	}
-	return false
 }
