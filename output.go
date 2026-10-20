@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// ANSI styling — disabled when stdout isn't a TTY or NO_COLOR is set.
+// ANSI styling - disabled when stdout isn't a TTY or NO_COLOR is set.
 var useColor = func() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
@@ -72,7 +72,7 @@ func printReport(r *Report) {
 		fmt.Printf("  %s %s\n", dim("uuid  "), r.UUID)
 	}
 	if r.Encrypted {
-		fmt.Printf("  %s\n", red("!! FairPlay-encrypted — static analysis limited"))
+		fmt.Printf("  %s\n", red("!! FairPlay-encrypted - static analysis limited"))
 	}
 	fmt.Println()
 

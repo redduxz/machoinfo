@@ -8,9 +8,9 @@ import (
 // entitlements that materially weaken the security posture of a binary.
 var riskyEntitlements = map[string]string{
 	"com.apple.security.get-task-allow":                        "debugger attach permitted",
-	"com.apple.security.cs.allow-dyld-environment-variables":   "DYLD_* env vars honored — injection surface",
-	"com.apple.security.cs.disable-library-validation":         "library validation off — unsigned dylibs load",
-	"com.apple.security.cs.disable-executable-page-protection": "W^X disabled — RWX memory allowed",
+	"com.apple.security.cs.allow-dyld-environment-variables":   "DYLD_* env vars honored - injection surface",
+	"com.apple.security.cs.disable-library-validation":         "library validation off - unsigned dylibs load",
+	"com.apple.security.cs.disable-executable-page-protection": "W^X disabled - RWX memory allowed",
 	"com.apple.security.cs.allow-unsigned-executable-memory":   "unsigned executable memory allowed",
 	"com.apple.security.cs.allow-jit":                          "JIT pages allowed",
 	"com.apple.private.security.no-sandbox":                    "private entitlement: no-sandbox",
@@ -33,7 +33,7 @@ func deriveFindings(r *Report) []string {
 	}
 
 	if r.Encrypted {
-		out = append(out, "FairPlay-encrypted sections (cryptid set) — static analysis limited")
+		out = append(out, "FairPlay-encrypted sections (cryptid set) - static analysis limited")
 	}
 
 	// signature posture
@@ -42,7 +42,7 @@ func deriveFindings(r *Report) []string {
 	} else {
 		s := r.Signature
 		if s.Status == "adhoc" {
-			out = append(out, "ad-hoc signed — no developer identity")
+			out = append(out, "ad-hoc signed - no developer identity")
 		}
 		// hardened runtime only matters for third-party (notarized) binaries;
 		// Apple platform binaries are exempt by design
@@ -77,26 +77,26 @@ func deriveFindings(r *Report) []string {
 		}
 	}
 	if hasRelative {
-		out = append(out, "relative LC_RPATH entries — dylib search-path risk")
+		out = append(out, "relative LC_RPATH entries - dylib search-path risk")
 	}
 	if badRpaths {
-		out = append(out, "LC_RPATH points into user-writable location — dylib hijack surface")
+		out = append(out, "LC_RPATH points into user-writable location - dylib hijack surface")
 	}
 	if len(r.Rpaths) > 0 {
 		for _, d := range r.Dylibs {
 			if strings.HasPrefix(d, "@rpath") {
-				out = append(out, "loads @rpath dylibs — verify rpath dirs are protected")
+				out = append(out, "loads @rpath dylibs - verify rpath dirs are protected")
 				break
 			}
 		}
 	}
 	for _, d := range r.WeakDylibs {
 		if strings.HasPrefix(d, "@rpath") || strings.HasPrefix(d, "@executable_path") {
-			out = append(out, "weak dylib "+d+" — missing file tolerated, hijack primitive")
+			out = append(out, "weak dylib "+d+" - missing file tolerated, hijack primitive")
 		}
 	}
 
-	// packed-looking sections (skip DWARF debug sections — compressed, not packed)
+	// packed-looking sections (skip DWARF debug sections - compressed, not packed)
 	for _, seg := range r.Segments {
 		for _, s := range seg.Sections {
 			if strings.HasPrefix(s.Name, "__zdebug") || strings.HasPrefix(s.Name, "__debug") {
@@ -104,7 +104,7 @@ func deriveFindings(r *Report) []string {
 			}
 			if s.Entropy >= 7.2 && s.Size > 4096 {
 				out = append(out, "high-entropy section "+s.Name+" ("+
-					f2s(s.Entropy)+") — packed/encrypted-looking")
+					f2s(s.Entropy)+") - packed/encrypted-looking")
 			}
 		}
 	}

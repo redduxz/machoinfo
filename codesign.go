@@ -174,7 +174,7 @@ func cstr(b []byte) string {
 	return string(b)
 }
 
-// decodePlist is a minimal plist XML decoder — returns key → rendered value.
+// decodePlist is a minimal plist XML decoder - returns key → rendered value.
 func decodePlist(data []byte) map[string]string {
 	out := map[string]string{}
 	dec := xml.NewDecoder(strings.NewReader(string(data)))

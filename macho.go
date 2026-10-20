@@ -190,11 +190,11 @@ func analyzeThin(rep *Report, f *macho.File, fh *os.File, base int64) {
 			continue
 		}
 		switch macho.LoadCmd(binary.LittleEndian.Uint32(raw[0:4])) {
-		case 0x1c: // LC_RPATH — lc_str: offset@8
+		case 0x1c: // LC_RPATH - lc_str: offset@8
 			if off := binary.LittleEndian.Uint32(raw[8:12]); int(off) < len(raw) {
 				rep.Rpaths = append(rep.Rpaths, cstr(raw[off:]))
 			}
-		case 0xd: // LC_ID_DYLIB — install name
+		case 0xd: // LC_ID_DYLIB - install name
 			if off := binary.LittleEndian.Uint32(raw[8:12]); int(off) < len(raw) {
 				rep.InstallName = cstr(raw[off:])
 			}

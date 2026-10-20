@@ -1,4 +1,4 @@
-// machoinfo — rapid Mach-O triage: headers, entropy, dylibs, rpaths,
+// machoinfo - rapid Mach-O triage: headers, entropy, dylibs, rpaths,
 // code signing, entitlements, and a findings engine.
 // Sibling tool to peinfo (github.com/redduxz/peinfo).
 package main
@@ -21,7 +21,7 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `machoinfo — Mach-O binary triage
+	fmt.Fprintf(os.Stderr, `machoinfo - Mach-O binary triage
 
 usage:
   machoinfo <file>            full triage of one binary
@@ -102,7 +102,7 @@ func runScan(root string) {
 		}
 		rep, err := Analyze(p)
 		if err != nil {
-			return nil // not a Mach-O, unreadable, etc — skip
+			return nil // not a Mach-O, unreadable, etc - skip
 		}
 		reps = append(reps, rep)
 		return nil
