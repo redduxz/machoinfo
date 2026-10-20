@@ -8,6 +8,7 @@ import (
 )
 
 const minStrLen = 6
+const maxStrLen = 160 // longer = almost certainly a packed string-blob, not a real string
 
 var interesting = []*regexp.Regexp{
 	regexp.MustCompile(`https?://[^\s"']+`),
@@ -34,7 +35,7 @@ func extractStrings(path string, cap int) []string {
 	var cur strings.Builder
 
 	flush := func() {
-		if cur.Len() >= minStrLen {
+		if cur.Len() >= minStrLen && cur.Len() <= maxStrLen {
 			s := cur.String()
 			for _, re := range interesting {
 				if re.MatchString(s) {

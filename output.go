@@ -192,6 +192,9 @@ func printReport(r *Report) {
 	if len(r.Strings) > 0 {
 		fmt.Printf("\n %s\n", cyan(bold(fmt.Sprintf("STRINGS  %d interesting", len(r.Strings)))))
 		for _, s := range r.Strings {
+			if len(s) > 100 {
+				s = s[:100] + "…"
+			}
 			fmt.Printf("   %s\n", dim(s))
 		}
 	}
