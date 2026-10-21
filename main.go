@@ -63,6 +63,10 @@ func main() {
 		return
 	}
 	if len(args) == 0 {
+		if useColor {
+			runShell()
+			return
+		}
 		usage()
 	}
 
