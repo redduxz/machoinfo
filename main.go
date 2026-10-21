@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -119,10 +121,13 @@ func runScan(root string) {
 	if err != nil {
 		fatal(err)
 	}
+	start := time.Now()
 	reps := analyzePool(paths, func(done, found int) string {
-		return fmt.Sprintf("scanning %s - %d/%d files, %d mach-o", root, done, len(paths), found)
+		return fmt.Sprintf("scanning %s  %s %d/%d · %d/s · %d mach-o",
+			root, bar(float64(done)/float64(max(len(paths), 1)), 14), done, len(paths),
+			int(float64(done)/time.Since(start).Seconds()), found)
 	})
-	printScan(reps)
+	printScan(reps, time.Since(start))
 }
 
 func runProcs() {
@@ -137,10 +142,13 @@ func runProcs() {
 			paths = append(paths, p)
 		}
 	}
+	start := time.Now()
 	reps := analyzePool(paths, func(done, found int) string {
-		return fmt.Sprintf("triaging processes - %d/%d", done, len(paths))
+		return fmt.Sprintf("triaging processes  %s %d/%d · %d/s",
+			bar(float64(done)/float64(max(len(paths), 1)), 14), done, len(paths),
+			int(float64(done)/time.Since(start).Seconds()))
 	})
-	printScan(reps)
+	printScan(reps, time.Since(start))
 }
 
 // analyzePool triages paths across NumCPU workers with a live spinner.
@@ -179,7 +187,18 @@ func analyzePool(paths []string, label func(done, found int) string) []*Report {
 	return reps
 }
 
-func printScan(reps []*Report) {
+func bar(frac float64, w int) string {
+	fill := int(frac * float64(w))
+	if fill > w {
+		fill = w
+	}
+	if fill < 0 {
+		fill = 0
+	}
+	return strings.Repeat("▓", fill) + strings.Repeat("░", w-fill)
+}
+
+func printScan(reps []*Report, elapsed time.Duration) {
 	sort.Slice(reps, func(i, j int) bool {
 		return len(reps[i].Findings) > len(reps[j].Findings)
 	})
@@ -198,6 +217,11 @@ func printScan(reps []*Report) {
 		for _, f := range r.Findings {
 			fmt.Printf("      %s\n", sev(f))
 		}
+	}
+	if inShell {
+		fmt.Printf("\n %s\n", green("✓ ")+dim(fmt.Sprintf("%d mach-o triaged · %d flagged · %.1fs",
+			len(reps), flagged, elapsed.Seconds())))
+		return
 	}
 	fmt.Printf("\n%s\n", dim(fmt.Sprintf("%d/%d binaries flagged", flagged, len(reps))))
 }

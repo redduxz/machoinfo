@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -26,35 +27,50 @@ const helpText = `commands:
 drilldown (on the loaded binary):
   findings  sign  ents  dylibs  rpaths  sections  strings  imports  header  json
 
-  clear            clear screen          exit      leave (ctrl-d)
-  tab completes commands and paths
+  info             full report           clear     clear screen
+  exit             leave (ctrl-d)        tab       completes commands + paths
 `
+
+// out prints a line; staggers slightly in the shell for a cascade feel.
+func out(s string) {
+	fmt.Println("  " + s)
+	if useColor {
+		time.Sleep(9 * time.Millisecond)
+	}
+}
 
 // runShell is the interactive REPL.
 func runShell() {
 	inShell = true
 	animatedBanner()
-	fmt.Println(dim("  type " + "help" + " for commands · tab completes · ctrl-d exits"))
-	fmt.Println()
 
 	var hist []string
 	var cur *Report
 
-	prompt := func() string {
-		if cur != nil {
-			return cyan("machoinfo") + dim(" ["+shortName(cur.Path)+"]") + cyan("⟩ ")
+	promptFn := func(alt bool) string {
+		glyph := cyan("⟩ ")
+		if alt {
+			glyph = "\x1b[1;36m❯ \x1b[0m"
 		}
-		return cyan("machoinfo") + cyan("⟩ ")
+		if cur != nil {
+			badge := green(" ✓")
+			if n := len(cur.Findings); n > 0 {
+				badge = yellow(fmt.Sprintf(" ⚑%d", n))
+			}
+			return cyan("machoinfo") + dim(" ["+shortName(cur.Path)) + badge + dim("]") + glyph
+		}
+		return cyan("machoinfo") + glyph
 	}
 
 	for {
-		line, ok := readLine(prompt(), &hist, completer)
+		line, ok := readLine(promptFn, &hist, completer)
 		if !ok {
 			fmt.Println(dim("bye"))
 			return
 		}
 		f := strings.Fields(line)
 		if len(f) == 0 {
+			fmt.Println(dim("  open <file> · scan [dir] · procs · diff <a> <b> · help"))
 			continue
 		}
 		hist = append(hist, line)
@@ -71,7 +87,7 @@ func runShell() {
 			fmt.Fprint(os.Stderr, "\x1b[2J\x1b[H")
 		case "open", "file", "o", "load":
 			if rest == "" {
-				fmt.Println(dim("usage: open <file>"))
+				out(dim("usage: open <file>"))
 				break
 			}
 			cur = cmdOpen(expandTilde(unquote(rest)))
@@ -86,71 +102,77 @@ func runShell() {
 		case "diff":
 			parts := splitArgs(rest)
 			if len(parts) != 2 {
-				fmt.Println(dim("usage: diff <old> <new>  (quote paths with spaces)"))
+				out(dim("usage: diff <old> <new>  (quote paths with spaces)"))
 				break
 			}
 			a, err := Analyze(expandTilde(parts[0]))
 			if err != nil {
-				fmt.Println(red(err.Error()))
+				out(red(err.Error()))
 				break
 			}
 			b, err := Analyze(expandTilde(parts[1]))
 			if err != nil {
-				fmt.Println(red(err.Error()))
+				out(red(err.Error()))
 				break
 			}
 			printDiff(DiffReports(a, b))
 		case "findings", "f":
-			drill(cur, func(r *Report) {
+			drill(cur, "findings", func(r *Report) {
 				if len(r.Findings) == 0 {
-					fmt.Println(green("  ✓ clean"))
+					out(green("✓ clean"))
 					return
 				}
 				for _, x := range r.Findings {
-					fmt.Println("  " + sev(x))
+					out(sev(x))
 				}
 			})
 		case "sign", "sig":
-			drill(cur, printSigDetail)
+			drill(cur, "signature", printSigDetail)
 		case "ents", "entitlements":
-			drill(cur, printEnts)
+			drill(cur, "entitlements", printEnts)
 		case "dylibs", "libs":
-			drill(cur, func(r *Report) {
+			drill(cur, "dylibs", func(r *Report) {
 				for _, d := range r.Dylibs {
-					fmt.Println("  " + d)
+					out(d)
 				}
 				for _, d := range r.WeakDylibs {
-					fmt.Println("  " + yellow("weak "+d))
+					out(yellow("weak " + d))
 				}
 			})
 		case "rpaths":
-			drill(cur, func(r *Report) {
+			drill(cur, "rpaths", func(r *Report) {
+				if len(r.Rpaths) == 0 {
+					out(dim("none"))
+				}
 				for _, rp := range r.Rpaths {
-					fmt.Println("  " + rp)
+					out(rp)
 				}
 			})
 		case "sections", "seg":
-			drill(cur, printSections)
+			drill(cur, "sections", printSections)
 		case "strings":
-			drill(cur, func(r *Report) {
+			drill(cur, "strings", func(r *Report) {
+				if len(r.Strings) == 0 {
+					out(dim("none"))
+				}
 				for _, s := range r.Strings {
-					fmt.Println("  " + s)
+					out(s)
 				}
 			})
 		case "imports":
-			drill(cur, func(r *Report) {
+			drill(cur, "imports", func(r *Report) {
 				for _, s := range r.Imports {
-					fmt.Println("  " + s)
+					out(s)
 				}
 			})
 		case "header", "hdr":
-			drill(cur, printHeader)
+			drill(cur, "header", printHeader)
 		case "json":
-			drill(cur, func(r *Report) { emitJSON(r) })
+			drill(cur, "json", func(r *Report) { emitJSON(r) })
 		case "info":
-			drill(cur, func(r *Report) { printReport(r) })
+			drill(cur, "report", func(r *Report) { printReport(r) })
 		default:
-			fmt.Println(dim("  unknown command - 'help'"))
+			out(dim("unknown command - 'help'"))
 		}
 	}
 }
@@ -160,7 +182,7 @@ func cmdOpen(path string) *Report {
 	r, err := Analyze(path)
 	sp.stop()
 	if err != nil {
-		fmt.Println(red("  " + err.Error()))
+		out(red(err.Error()))
 		return nil
 	}
 	printCard(r)
@@ -169,18 +191,22 @@ func cmdOpen(path string) *Report {
 
 // printCard is the compact post-open summary (not the full report).
 func printCard(r *Report) {
-	fmt.Printf(" %s\n", bold(r.Path))
-	fmt.Printf("  %s\n", dim(strings.Join([]string{
+	out(bold(r.Path))
+	out(dim(strings.Join([]string{
 		r.FileType, strings.Join(r.Archs, ", "), humanSize(r.Size),
 	}, " · ")))
 	printSummaryLine(r)
-	fmt.Println(dim("  drilldown: findings · ents · sections · dylibs · strings · json"))
+	out(dim("drilldown: findings · ents · sections · dylibs · strings · json"))
 }
 
-func drill(cur *Report, fn func(*Report)) {
+// drill runs fn with a section header if a binary is loaded.
+func drill(cur *Report, title string, fn func(*Report)) {
 	if cur == nil {
-		fmt.Println(dim("  nothing loaded - 'open <file>' first"))
+		out(dim("nothing loaded - 'open <file>' first"))
 		return
+	}
+	if title != "" {
+		fmt.Println(" " + dim("▸ "+title))
 	}
 	fn(cur)
 }
@@ -188,25 +214,25 @@ func drill(cur *Report, fn func(*Report)) {
 func printSigDetail(r *Report) {
 	s := r.Signature
 	if s == nil || s.Status == "none" {
-		fmt.Println("  " + red("✗ unsigned"))
+		out(red("✗ unsigned"))
 		return
 	}
-	fmt.Printf("  status    %s\n", s.Status)
+	out(fmt.Sprintf("status    %s", s.Status))
 	if s.Identifier != "" {
-		fmt.Printf("  ident     %s\n", s.Identifier)
+		out(fmt.Sprintf("ident     %s", s.Identifier))
 	}
 	if s.TeamID != "" {
-		fmt.Printf("  team      %s\n", s.TeamID)
+		out(fmt.Sprintf("team      %s", s.TeamID))
 	}
-	fmt.Printf("  hardened  %v   notarized  %v   cms  %v\n", s.Runtime, s.Notarized, s.HasCMS)
+	out(fmt.Sprintf("hardened  %v   notarized  %v   cms  %v", s.Runtime, s.Notarized, s.HasCMS))
 	if len(s.CDFlags) > 0 {
-		fmt.Printf("  cdflags   %s\n", strings.Join(s.CDFlags, " "))
+		out(fmt.Sprintf("cdflags   %s", strings.Join(s.CDFlags, " ")))
 	}
 }
 
 func printEnts(r *Report) {
 	if len(r.Entitlements) == 0 {
-		fmt.Println(dim("  none"))
+		out(dim("none"))
 		return
 	}
 	keys := make([]string, 0, len(r.Entitlements))
@@ -221,35 +247,35 @@ func printEnts(r *Report) {
 		} else if strings.HasPrefix(k, "com.apple.private.") {
 			mark = yellow("? ")
 		}
-		fmt.Printf("%s%s = %s\n", mark, k, r.Entitlements[k])
+		out(fmt.Sprintf("%s%s = %s", mark, k, r.Entitlements[k]))
 	}
 }
 
 func printSections(r *Report) {
 	for _, seg := range r.Segments {
-		fmt.Printf("  %-12s %-10s %s\n", seg.Name, humanSize(int64(seg.Size)), seg.Prot)
+		out(fmt.Sprintf("%-12s %-10s %s", seg.Name, humanSize(int64(seg.Size)), seg.Prot))
 		for _, s := range seg.Sections {
-			fmt.Printf("      %-18s %8s  e=%.2f\n", s.Name, humanSize(int64(s.Size)), s.Entropy)
+			out(fmt.Sprintf("    %-18s %8s  e=%.2f", s.Name, humanSize(int64(s.Size)), s.Entropy))
 		}
 	}
 }
 
 func printHeader(r *Report) {
-	fmt.Printf("  type     %s %s\n", r.FileType, strings.Join(r.Archs, ","))
+	out(fmt.Sprintf("type     %s %s", r.FileType, strings.Join(r.Archs, ",")))
 	if r.MinOS != "" {
 		plat := ""
 		if r.Platform != "" {
 			plat = " (" + r.Platform + ")"
 		}
-		fmt.Printf("  min os   %s%s\n", r.MinOS, plat)
+		out(fmt.Sprintf("min os   %s%s", r.MinOS, plat))
 	}
-	fmt.Printf("  size     %s\n", humanSize(r.Size))
-	fmt.Printf("  mode     %s\n", r.FileMode)
+	out(fmt.Sprintf("size     %s", humanSize(r.Size)))
+	out(fmt.Sprintf("mode     %s", r.FileMode))
 	if r.UUID != "" {
-		fmt.Printf("  uuid     %s\n", r.UUID)
+		out(fmt.Sprintf("uuid     %s", r.UUID))
 	}
-	fmt.Printf("  flags    %s\n", strings.Join(r.Flags, " "))
-	fmt.Printf("  fat      %v   encrypted  %v\n", r.Fat, r.Encrypted)
+	out(fmt.Sprintf("flags    %s", strings.Join(r.Flags, " ")))
+	out(fmt.Sprintf("fat      %v   encrypted  %v", r.Fat, r.Encrypted))
 }
 
 func shortName(p string) string {
@@ -316,7 +342,6 @@ func completer(word string, first bool) []string {
 }
 
 func pathCompletions(word string) []string {
-	// find dir portion; keep the typed prefix for results
 	dir := word
 	base := ""
 	if i := strings.LastIndex(word, "/"); i >= 0 {
@@ -348,8 +373,8 @@ func pathCompletions(word string) []string {
 	return out
 }
 
-// animatedBanner: magic bytes slot-settle left-to-right onto fe ed fa cf,
-// then the tagline types out. ~0.6s total.
+// animatedBanner: hex digits settle in scattered order (reel feel),
+// snap to a cyan->violet gradient, tagline types out. ~0.7s.
 func animatedBanner() {
 	top := "╭─────────────╮"
 	bot := "╰─────────────╯"
@@ -363,33 +388,39 @@ func animatedBanner() {
 
 	fmt.Println(dim(top))
 	hex := "0123456789abcdef"
-	slot := func(from int) string {
+	// hex-digit positions in "fe ed fa cf" (spaces pre-locked)
+	order := []int{6, 0, 9, 3, 10, 4, 7, 1}
+	locked := map[int]bool{2: true, 5: true, 8: true}
+	renderMid := func() {
 		var b strings.Builder
-		for i := from; i < 11; i++ {
-			if i%3 == 2 {
-				b.WriteByte(' ')
+		for i := 0; i < 11; i++ {
+			if locked[i] {
+				b.WriteByte(realBytes[i])
 			} else {
 				b.WriteByte(hex[rand.Intn(16)])
 			}
 		}
-		return b.String()
+		fmt.Fprintf(os.Stderr, "\r%s%s%s  %s", dim("│"), cyan(" "+b.String()+" "), dim("│"), bold("machoinfo"))
 	}
 
-	locked := 0
-	delay := 22 * time.Millisecond
-	for locked < 11 {
-		line := realBytes[:locked] + slot(locked)
-		fmt.Fprintf(os.Stderr, "\r%s%s%s  %s", dim("│"), cyan(" "+line+" "), dim("│"), bold("machoinfo"))
+	delay := 26 * time.Millisecond
+	for _, idx := range order {
+		renderMid()
 		time.Sleep(delay)
-		locked++
-		delay += 5 * time.Millisecond // decelerate like a reel
+		locked[idx] = true
+		delay += 7 * time.Millisecond // decelerate
 	}
-	fmt.Fprintf(os.Stderr, "\r%s%s%s  %s\n", dim("│"), cyan(" "+realBytes+" "), dim("│"), bold("machoinfo"))
+
+	// final frame: gradient lockup
+	c256 := func(n int, s string) string { return fmt.Sprintf("\x1b[38;5;%dm%s\x1b[0m", n, s) }
+	fmt.Fprintf(os.Stderr, "\r%s %s %s %s %s %s  %s\n",
+		dim("│"), c256(45, "fe"), c256(39, "ed"), c256(33, "fa"), c256(63, "cf"),
+		dim("│"), bold("machoinfo"))
 	fmt.Fprintf(os.Stderr, "%s  ", dim(bot))
 	for _, ch := range tag {
 		fmt.Fprintf(os.Stderr, "%s", dim(string(ch)))
-		time.Sleep(7 * time.Millisecond)
+		time.Sleep(6 * time.Millisecond)
 	}
-	fmt.Println()
-	fmt.Println()
+	fmt.Printf("\n%s\n\n", dim(fmt.Sprintf("  ready · %d cores · %s/%s · tab completes",
+		runtime.NumCPU(), runtime.GOOS, runtime.GOARCH)))
 }
