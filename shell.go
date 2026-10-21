@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 var inShell bool
@@ -377,9 +379,9 @@ func pathCompletions(word string) []string {
 
 const version = "0.3.0"
 
-// animatedBanner: full boot sequence - border draws, hex digits settle in
-// scattered order, snap to gradient, tagline types, subsystems check in.
-// ~1.3s total. Cursor hidden throughout.
+// animatedBanner: full-screen boot - chip draws centered, bytes settle,
+// subsystem checks expand below it, then the layout snaps to top-left
+// and the shell takes over. Cursor hidden throughout.
 func animatedBanner() {
 	top := "╭─────────────╮"
 	bot := "╰─────────────╯"
@@ -392,17 +394,33 @@ func animatedBanner() {
 	}
 
 	w := os.Stderr
-	fmt.Fprint(w, "\x1b[?25l")       // hide cursor
-	defer fmt.Fprint(w, "\x1b[?25h") // restore on exit
+	width, height, _ := term.GetSize(int(os.Stdin.Fd()))
+	if width < 24 || height < 16 {
+		fmt.Printf("%s\n%s%s%s  %s\n%s  %s\n\n",
+			dim(top), dim("│"), cyan(" "+realBytes+" "), dim("│"), bold("machoinfo"),
+			dim(bot), dim(tag))
+		return
+	}
+
+	fmt.Fprint(w, "\x1b[2J\x1b[H\x1b[?25l") // clear + home + hide cursor
+	defer fmt.Fprint(w, "\x1b[?25h")
+
+	pad := strings.Repeat(" ", (width-15)/2) // center the 15-wide box
+	row := (height - 12) / 2                 // chip sits ~35% down
+	if row < 1 {
+		row = 1
+	}
+	fmt.Fprintf(w, "\x1b[%d;1H", row)
 
 	// top border draws left to right
+	fmt.Fprint(w, pad)
 	for _, ch := range top {
 		fmt.Fprint(w, dim(string(ch)))
-		time.Sleep(3 * time.Millisecond)
+		time.Sleep(4 * time.Millisecond)
 	}
 	fmt.Fprintln(w)
 
-	// mid line: scattered settle
+	// mid line: scattered settle (redraws in place)
 	hex := "0123456789abcdef"
 	order := []int{6, 0, 9, 3, 10, 4, 7, 1}
 	locked := map[int]bool{2: true, 5: true, 8: true}
@@ -415,7 +433,7 @@ func animatedBanner() {
 				b.WriteByte(hex[rand.Intn(16)])
 			}
 		}
-		fmt.Fprintf(w, "\r%s%s%s  %s", dim("│"), cyan(" "+b.String()+" "), dim("│"), bold("machoinfo"))
+		fmt.Fprintf(w, "\r%s%s%s%s  %s", pad, dim("│"), cyan(" "+b.String()+" "), dim("│"), bold("machoinfo"))
 	}
 	delay := 24 * time.Millisecond
 	for _, idx := range order {
@@ -427,14 +445,15 @@ func animatedBanner() {
 
 	// gradient lockup
 	c256 := func(n int, s string) string { return fmt.Sprintf("\x1b[38;5;%dm%s\x1b[0m", n, s) }
-	fmt.Fprintf(w, "\r%s %s %s %s %s %s  %s\n",
-		dim("│"), c256(45, "fe"), c256(39, "ed"), c256(33, "fa"), c256(63, "cf"),
+	fmt.Fprintf(w, "\r%s%s %s %s %s %s %s  %s\n",
+		pad, dim("│"), c256(45, "fe"), c256(39, "ed"), c256(33, "fa"), c256(63, "cf"),
 		dim("│"), bold("machoinfo"))
 
 	// bottom border draws, tagline types after it
+	fmt.Fprint(w, pad)
 	for _, ch := range bot {
 		fmt.Fprint(w, dim(string(ch)))
-		time.Sleep(3 * time.Millisecond)
+		time.Sleep(4 * time.Millisecond)
 	}
 	fmt.Fprint(w, "  ")
 	for _, ch := range tag {
@@ -444,7 +463,7 @@ func animatedBanner() {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w)
 
-	// subsystem boot checks: spin briefly, then stamp a check
+	// subsystem checks expand below the chip
 	inits := []struct{ name, detail string }{
 		{"mach-o parser", "fat + thin slices"},
 		{"code signature", "superblob · der entitlements"},
@@ -452,15 +471,21 @@ func animatedBanner() {
 		{"interactive shell", "readline · history · completion"},
 	}
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴"}
+	ipad := pad + "  "
 	for _, s := range inits {
 		for i := 0; i < 4; i++ {
-			fmt.Fprintf(w, "\r  %s %s", mag(frames[i%len(frames)]), dim(s.name))
+			fmt.Fprintf(w, "\r%s%s %s", ipad, mag(frames[i%len(frames)]), dim(s.name))
 			time.Sleep(22 * time.Millisecond)
 		}
-		fmt.Fprintf(w, "\r  %s %s  %s\x1b[K\n", green("✓"), s.name, dim(s.detail))
-		time.Sleep(28 * time.Millisecond)
+		fmt.Fprintf(w, "\r%s%s %s  %s\x1b[K\n", ipad, green("✓"), s.name, dim(s.detail))
+		time.Sleep(26 * time.Millisecond)
 	}
-
-	fmt.Printf("\n%s\n\n", dim(fmt.Sprintf("  ready · v%s · %d cores · %s/%s",
+	fmt.Fprintf(w, "\n%s%s\n", ipad, dim(fmt.Sprintf("ready · v%s · %d cores · %s/%s",
 		version, runtime.NumCPU(), runtime.GOOS, runtime.GOARCH)))
+
+	// beat, then snap to app layout
+	time.Sleep(420 * time.Millisecond)
+	fmt.Fprintf(w, "\x1b[2J\x1b[H%s\n%s %s %s %s %s %s  %s\n%s  %s\n\n",
+		dim(top), dim("│"), c256(45, "fe"), c256(39, "ed"), c256(33, "fa"), c256(63, "cf"),
+		dim("│"), bold("machoinfo"), dim(bot), dim(tag))
 }
