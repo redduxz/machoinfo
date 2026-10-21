@@ -6,42 +6,22 @@ import (
 	"time"
 )
 
-var logo = []string{
-	`███╗   ███╗ █████╗  ██████╗██╗  ██╗ ██████╗ ██╗███╗   ██╗███████╗ ██████╗`,
-	`████╗ ████║██╔══██╗██╔════╝██║  ██║██╔═══██╗██║████╗  ██║██╔════╝██╔═══██╗`,
-	`██╔████╔██║███████║██║     ███████║██║   ██║██║██╔██╗ ██║█████╗  ██║   ██║`,
-	`██║╚██╔╝██║██╔══██║██║     ██╔══██║██║   ██║██║██║╚██╗██║██╔══╝  ██║   ██║`,
-	`██║ ╚═╝ ██║██║  ██║╚██████╗██║  ██║╚██████╔╝██║██║ ╚████║██║     ╚██████╔╝`,
-	`╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝╚═╝      ╚═════╝`,
-}
-
-var tagline = `            mach-o binary triage · peinfo for macos`
-
-// printBanner draws the logo (animated reveal when interactive).
+// banner is the hexdump-style lockup: the Mach-O magic bytes in a chip.
 func printBanner() {
-	anim := useColor
-	delay := 0
-	if anim {
-		delay = 28
-	}
-	for i, l := range logo {
-		// gradient: red -> magenta across the block
-		fmt.Println(gradLine(l, i))
-		if anim {
-			time.Sleep(time.Duration(delay) * time.Millisecond)
-		}
-	}
-	fmt.Println(dim(tagline))
-	fmt.Println()
-}
+	top := "╭─────────────╮"
+	mid := "│ fe ed fa cf │"
+	bot := "╰─────────────╯"
 
-// gradLine colors a banner line top→bottom through a small palette.
-func gradLine(s string, i int) string {
 	if !useColor {
-		return s
+		fmt.Printf("%s\n%s  machoinfo\n%s   mach-o triage - peinfo for macos\n\n",
+			top, mid, bot)
+		return
 	}
-	codes := []string{"31", "31", "35", "35", "36", "36"} // red → magenta → cyan
-	return paint(codes[i%len(codes)], s)
+	fmt.Println(dim(top))
+	time.Sleep(60 * time.Millisecond)
+	fmt.Printf("%s%s  %s\n", dim("│"), cyan(" fe ed fa cf ")+dim("│"), bold("machoinfo"))
+	time.Sleep(60 * time.Millisecond)
+	fmt.Printf("%s  %s\n\n", dim(bot), dim("mach-o triage · peinfo for macos"))
 }
 
 // spinner runs a braille spinner+message on stderr until done closes.
