@@ -21,12 +21,12 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `machoinfo - Mach-O binary triage
-
-usage:
+	printBanner()
+	fmt.Fprintf(os.Stderr, `usage:
   machoinfo <file>            full triage of one binary
   machoinfo <dir>             recursively scan binaries, print flagged ones
   machoinfo --procs           triage all running processes
+  machoinfo --diff a b        compare two binaries
 flags:
   --json             emit JSON
   --all              in dir/procs mode, also print clean binaries
@@ -85,6 +85,7 @@ func main() {
 		emitJSON(rep)
 		return
 	}
+	printBanner()
 	if *flagFindings {
 		for _, f := range rep.Findings {
 			fmt.Println(f)
@@ -95,11 +96,19 @@ func main() {
 }
 
 func runScan(root string) {
+	if !*flagJSON {
+		printBanner()
+	}
 	var reps []*Report
+	var walked int
+	sp := startSpinner(func() string {
+		return fmt.Sprintf("scanning %s - %d files, %d mach-o", root, walked, len(reps))
+	})
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
+		walked++
 		rep, err := Analyze(p)
 		if err != nil {
 			return nil // not a Mach-O, unreadable, etc - skip
@@ -107,6 +116,7 @@ func runScan(root string) {
 		reps = append(reps, rep)
 		return nil
 	})
+	sp.stop()
 	if err != nil {
 		fatal(err)
 	}
@@ -114,9 +124,18 @@ func runScan(root string) {
 }
 
 func runProcs() {
+	if !*flagJSON {
+		printBanner()
+	}
 	var reps []*Report
 	seen := map[string]bool{}
-	for _, p := range procPaths() {
+	paths := procPaths()
+	var done int
+	sp := startSpinner(func() string {
+		return fmt.Sprintf("triaging processes - %d/%d", done, len(paths))
+	})
+	for _, p := range paths {
+		done++
 		if seen[p] {
 			continue
 		}
@@ -127,6 +146,7 @@ func runProcs() {
 		}
 		reps = append(reps, rep)
 	}
+	sp.stop()
 	printScan(reps)
 }
 
