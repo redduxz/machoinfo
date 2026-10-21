@@ -82,7 +82,9 @@ func runShell() {
 			fmt.Println(dim("bye"))
 			return
 		case "help", "h", "?":
-			fmt.Print(helpText)
+			for _, l := range strings.Split(strings.TrimRight(helpText, "\n"), "\n") {
+				out(dim(l))
+			}
 		case "clear", "cls":
 			fmt.Fprint(os.Stderr, "\x1b[2J\x1b[H")
 		case "open", "file", "o", "load":
@@ -373,8 +375,11 @@ func pathCompletions(word string) []string {
 	return out
 }
 
-// animatedBanner: hex digits settle in scattered order (reel feel),
-// snap to a cyan->violet gradient, tagline types out. ~0.7s.
+const version = "0.3.0"
+
+// animatedBanner: full boot sequence - border draws, hex digits settle in
+// scattered order, snap to gradient, tagline types, subsystems check in.
+// ~1.3s total. Cursor hidden throughout.
 func animatedBanner() {
 	top := "╭─────────────╮"
 	bot := "╰─────────────╯"
@@ -386,9 +391,19 @@ func animatedBanner() {
 		return
 	}
 
-	fmt.Println(dim(top))
+	w := os.Stderr
+	fmt.Fprint(w, "\x1b[?25l")       // hide cursor
+	defer fmt.Fprint(w, "\x1b[?25h") // restore on exit
+
+	// top border draws left to right
+	for _, ch := range top {
+		fmt.Fprint(w, dim(string(ch)))
+		time.Sleep(3 * time.Millisecond)
+	}
+	fmt.Fprintln(w)
+
+	// mid line: scattered settle
 	hex := "0123456789abcdef"
-	// hex-digit positions in "fe ed fa cf" (spaces pre-locked)
 	order := []int{6, 0, 9, 3, 10, 4, 7, 1}
 	locked := map[int]bool{2: true, 5: true, 8: true}
 	renderMid := func() {
@@ -400,27 +415,52 @@ func animatedBanner() {
 				b.WriteByte(hex[rand.Intn(16)])
 			}
 		}
-		fmt.Fprintf(os.Stderr, "\r%s%s%s  %s", dim("│"), cyan(" "+b.String()+" "), dim("│"), bold("machoinfo"))
+		fmt.Fprintf(w, "\r%s%s%s  %s", dim("│"), cyan(" "+b.String()+" "), dim("│"), bold("machoinfo"))
 	}
-
-	delay := 26 * time.Millisecond
+	delay := 24 * time.Millisecond
 	for _, idx := range order {
 		renderMid()
 		time.Sleep(delay)
 		locked[idx] = true
-		delay += 7 * time.Millisecond // decelerate
+		delay += 6 * time.Millisecond
 	}
 
-	// final frame: gradient lockup
+	// gradient lockup
 	c256 := func(n int, s string) string { return fmt.Sprintf("\x1b[38;5;%dm%s\x1b[0m", n, s) }
-	fmt.Fprintf(os.Stderr, "\r%s %s %s %s %s %s  %s\n",
+	fmt.Fprintf(w, "\r%s %s %s %s %s %s  %s\n",
 		dim("│"), c256(45, "fe"), c256(39, "ed"), c256(33, "fa"), c256(63, "cf"),
 		dim("│"), bold("machoinfo"))
-	fmt.Fprintf(os.Stderr, "%s  ", dim(bot))
-	for _, ch := range tag {
-		fmt.Fprintf(os.Stderr, "%s", dim(string(ch)))
-		time.Sleep(6 * time.Millisecond)
+
+	// bottom border draws, tagline types after it
+	for _, ch := range bot {
+		fmt.Fprint(w, dim(string(ch)))
+		time.Sleep(3 * time.Millisecond)
 	}
-	fmt.Printf("\n%s\n\n", dim(fmt.Sprintf("  ready · %d cores · %s/%s · tab completes",
-		runtime.NumCPU(), runtime.GOOS, runtime.GOARCH)))
+	fmt.Fprint(w, "  ")
+	for _, ch := range tag {
+		fmt.Fprint(w, dim(string(ch)))
+		time.Sleep(5 * time.Millisecond)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w)
+
+	// subsystem boot checks: spin briefly, then stamp a check
+	inits := []struct{ name, detail string }{
+		{"mach-o parser", "fat + thin slices"},
+		{"code signature", "superblob · der entitlements"},
+		{"findings engine", "triage rules"},
+		{"interactive shell", "readline · history · completion"},
+	}
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴"}
+	for _, s := range inits {
+		for i := 0; i < 4; i++ {
+			fmt.Fprintf(w, "\r  %s %s", mag(frames[i%len(frames)]), dim(s.name))
+			time.Sleep(22 * time.Millisecond)
+		}
+		fmt.Fprintf(w, "\r  %s %s  %s\x1b[K\n", green("✓"), s.name, dim(s.detail))
+		time.Sleep(28 * time.Millisecond)
+	}
+
+	fmt.Printf("\n%s\n\n", dim(fmt.Sprintf("  ready · v%s · %d cores · %s/%s",
+		version, runtime.NumCPU(), runtime.GOOS, runtime.GOARCH)))
 }
