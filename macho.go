@@ -63,7 +63,10 @@ type SignatureInfo struct {
 }
 
 // Analyze parses a Mach-O (thin or fat) and returns the triage report.
-func Analyze(path string) (*Report, error) {
+func Analyze(path string) (*Report, error) { return analyze(path, true) }
+
+// analyze with full=false skips expensive display-only extraction (strings).
+func analyze(path string, full bool) (*Report, error) {
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -93,7 +96,7 @@ func Analyze(path string) (*Report, error) {
 			rep.Archs = append(rep.Archs, cpuName(a.Cpu))
 		}
 		if a := pickArch(fat); a != nil {
-			analyzeThin(rep, a.File, fh, int64(a.Offset))
+			analyzeThin(rep, a.File, fh, int64(a.Offset), full)
 		}
 	} else {
 		f, err := macho.NewFile(fh)
@@ -101,7 +104,7 @@ func Analyze(path string) (*Report, error) {
 			return nil, err
 		}
 		rep.Archs = []string{cpuName(f.Cpu)}
-		analyzeThin(rep, f, fh, 0)
+		analyzeThin(rep, f, fh, 0, full)
 	}
 
 	rep.Findings = deriveFindings(rep)
@@ -129,7 +132,7 @@ func pickArch(fat *macho.FatFile) *macho.FatArch {
 	return nil
 }
 
-func analyzeThin(rep *Report, f *macho.File, fh *os.File, base int64) {
+func analyzeThin(rep *Report, f *macho.File, fh *os.File, base int64, full bool) {
 	rep.FileType = typeName(f.Type)
 	rep.Flags = flagNames(uint32(f.Flags))
 
@@ -225,7 +228,9 @@ func analyzeThin(rep *Report, f *macho.File, fh *os.File, base int64) {
 	}
 
 	parseCodeSignature(rep, fh, f, base)
-	rep.Strings = extractStrings(rep.Path, 60)
+	if full {
+		rep.Strings = extractStrings(rep.Path, 60)
+	}
 }
 
 func sectionEntropy(s *macho.Section) float64 {

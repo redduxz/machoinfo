@@ -27,6 +27,7 @@ Automatic flags, tuned for triage signal over noise:
 ## Usage
 
 ```sh
+machoinfo                   # interactive shell (animated, tab-completion)
 machoinfo <file>            # full triage dump
 machoinfo <dir>             # recursive scan - prints only flagged binaries
 machoinfo --procs           # triage all running processes
@@ -34,6 +35,14 @@ machoinfo --all /bin        # include clean results too
 machoinfo --json <file>     # machine-readable output
 machoinfo --findings-only <file>
 ```
+
+### Interactive shell
+
+Run `machoinfo` with no args in a terminal to drop into the REPL.
+`open <file>` loads a binary, then drill down without re-parsing:
+`findings`, `ents`, `sections`, `dylibs`, `strings`, `json`, and more.
+Tab completes commands and paths; arrow-key history; ctrl-d exits.
+Scans run across all cores (`scan`, `procs`).
 
 ## Example
 

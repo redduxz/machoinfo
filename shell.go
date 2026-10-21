@@ -9,24 +9,32 @@ import (
 	"time"
 )
 
+var inShell bool
+
+var shellCommands = []string{
+	"open", "scan", "procs", "diff", "findings", "sign", "ents",
+	"dylibs", "rpaths", "sections", "strings", "imports", "header",
+	"json", "info", "clear", "help", "exit",
+}
+
 const helpText = `commands:
   open <file>      analyze a binary (loads it for drilldown)
-  scan <dir>       audit a directory - flagged binaries only
+  scan [dir]       audit a directory (defaults to .)
   procs            audit running processes
-  diff <a> <b>     compare two binaries
-  drilldown on loaded binary:
-    findings   verdict findings          sign      signature details
-    ents       entitlements              dylibs    linked libraries
-    sections   segments + entropy        rpaths    runpath entries
-    strings    interesting strings       imports   imported symbols
-    header     headers / uuid / minos    json      full JSON report
-  clear            clear screen          exit      leave (ctrl-d works too)
+  diff <a> <b>     compare two binaries (quote paths with spaces)
+
+drilldown (on the loaded binary):
+  findings  sign  ents  dylibs  rpaths  sections  strings  imports  header  json
+
+  clear            clear screen          exit      leave (ctrl-d)
+  tab completes commands and paths
 `
 
 // runShell is the interactive REPL.
 func runShell() {
+	inShell = true
 	animatedBanner()
-	fmt.Println(dim("  type " + "help" + " for commands · ctrl-d to exit"))
+	fmt.Println(dim("  type " + "help" + " for commands · tab completes · ctrl-d exits"))
 	fmt.Println()
 
 	var hist []string
@@ -40,7 +48,7 @@ func runShell() {
 	}
 
 	for {
-		line, ok := readLine(prompt(), &hist)
+		line, ok := readLine(prompt(), &hist, completer)
 		if !ok {
 			fmt.Println(dim("bye"))
 			return
@@ -50,6 +58,8 @@ func runShell() {
 			continue
 		}
 		hist = append(hist, line)
+		trimmed := strings.TrimSpace(line)
+		rest := strings.TrimSpace(trimmed[len(f[0]):]) // args, spaces preserved
 
 		switch strings.ToLower(f[0]) {
 		case "exit", "quit", "q":
@@ -60,30 +70,31 @@ func runShell() {
 		case "clear", "cls":
 			fmt.Fprint(os.Stderr, "\x1b[2J\x1b[H")
 		case "open", "file", "o", "load":
-			if len(f) < 2 {
+			if rest == "" {
 				fmt.Println(dim("usage: open <file>"))
 				break
 			}
-			cur = cmdOpen(f[1])
+			cur = cmdOpen(expandTilde(unquote(rest)))
 		case "scan", "s":
-			if len(f) < 2 {
-				fmt.Println(dim("usage: scan <dir>"))
-				break
+			dir := "."
+			if rest != "" {
+				dir = expandTilde(unquote(rest))
 			}
-			runScan(f[1])
+			runScan(dir)
 		case "procs":
 			runProcs()
 		case "diff":
-			if len(f) != 3 {
-				fmt.Println(dim("usage: diff <old> <new>"))
+			parts := splitArgs(rest)
+			if len(parts) != 2 {
+				fmt.Println(dim("usage: diff <old> <new>  (quote paths with spaces)"))
 				break
 			}
-			a, err := Analyze(f[1])
+			a, err := Analyze(expandTilde(parts[0]))
 			if err != nil {
 				fmt.Println(red(err.Error()))
 				break
 			}
-			b, err := Analyze(f[2])
+			b, err := Analyze(expandTilde(parts[1]))
 			if err != nil {
 				fmt.Println(red(err.Error()))
 				break
@@ -136,6 +147,8 @@ func runShell() {
 			drill(cur, printHeader)
 		case "json":
 			drill(cur, func(r *Report) { emitJSON(r) })
+		case "info":
+			drill(cur, func(r *Report) { printReport(r) })
 		default:
 			fmt.Println(dim("  unknown command - 'help'"))
 		}
@@ -246,42 +259,137 @@ func shortName(p string) string {
 	return p
 }
 
-// animatedBanner: the magic bytes settle like a slot machine, then lock on fe ed fa cf.
+func expandTilde(p string) string {
+	if p == "~" {
+		h, _ := os.UserHomeDir()
+		return h
+	}
+	if strings.HasPrefix(p, "~/") {
+		h, _ := os.UserHomeDir()
+		return h + p[1:]
+	}
+	return p
+}
+
+func unquote(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+func splitArgs(s string) []string {
+	var out []string
+	var cur strings.Builder
+	inQ := false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			inQ = !inQ
+		case r == ' ' && !inQ:
+			if cur.Len() > 0 {
+				out = append(out, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if cur.Len() > 0 {
+		out = append(out, cur.String())
+	}
+	return out
+}
+
+// completer: first word = commands; args = file paths.
+func completer(word string, first bool) []string {
+	if first {
+		var out []string
+		for _, c := range shellCommands {
+			if strings.HasPrefix(c, word) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	return pathCompletions(word)
+}
+
+func pathCompletions(word string) []string {
+	// find dir portion; keep the typed prefix for results
+	dir := word
+	base := ""
+	if i := strings.LastIndex(word, "/"); i >= 0 {
+		dir, base = word[:i+1], word[i+1:]
+	} else {
+		dir = ""
+	}
+	realDir := dir
+	if realDir == "" {
+		realDir = "."
+	}
+	realDir = expandTilde(realDir)
+	ents, err := os.ReadDir(realDir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		if !strings.HasPrefix(e.Name(), base) {
+			continue
+		}
+		c := dir + e.Name()
+		if e.IsDir() {
+			c += "/"
+		}
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// animatedBanner: magic bytes slot-settle left-to-right onto fe ed fa cf,
+// then the tagline types out. ~0.6s total.
 func animatedBanner() {
 	top := "╭─────────────╮"
 	bot := "╰─────────────╯"
 	realBytes := "fe ed fa cf"
+	tag := "mach-o triage · peinfo for macos"
 
 	if !useColor {
-		fmt.Printf("%s\n│ %s │  machoinfo\n%s  mach-o triage - peinfo for macos\n\n",
-			top, realBytes, bot)
+		fmt.Printf("%s\n│ %s │  machoinfo\n%s  %s\n\n", top, realBytes, bot, tag)
 		return
 	}
 
 	fmt.Println(dim(top))
 	hex := "0123456789abcdef"
-	slot := func() string {
+	slot := func(from int) string {
 		var b strings.Builder
-		for i := 0; i < 11; i++ {
+		for i := from; i < 11; i++ {
 			if i%3 == 2 {
 				b.WriteByte(' ')
-				continue
+			} else {
+				b.WriteByte(hex[rand.Intn(16)])
 			}
-			b.WriteByte(hex[rand.Intn(16)])
 		}
 		return b.String()
 	}
 
-	// settle: each position locks left-to-right
 	locked := 0
-	for frame := 0; frame < 14; frame++ {
-		line := realBytes[:locked] + slot()[:11-locked]
+	delay := 22 * time.Millisecond
+	for locked < 11 {
+		line := realBytes[:locked] + slot(locked)
 		fmt.Fprintf(os.Stderr, "\r%s%s%s  %s", dim("│"), cyan(" "+line+" "), dim("│"), bold("machoinfo"))
-		time.Sleep(45 * time.Millisecond)
-		if frame%2 == 1 && locked < 11 {
-			locked++
-		}
+		time.Sleep(delay)
+		locked++
+		delay += 5 * time.Millisecond // decelerate like a reel
 	}
 	fmt.Fprintf(os.Stderr, "\r%s%s%s  %s\n", dim("│"), cyan(" "+realBytes+" "), dim("│"), bold("machoinfo"))
-	fmt.Printf("%s  %s\n\n", dim(bot), dim("mach-o triage · peinfo for macos"))
+	fmt.Fprintf(os.Stderr, "%s  ", dim(bot))
+	for _, ch := range tag {
+		fmt.Fprintf(os.Stderr, "%s", dim(string(ch)))
+		time.Sleep(7 * time.Millisecond)
+	}
+	fmt.Println()
+	fmt.Println()
 }

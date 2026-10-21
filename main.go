@@ -9,7 +9,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"sync"
+	"sync/atomic"
+
+	"golang.org/x/term"
 )
 
 var (
@@ -63,7 +68,7 @@ func main() {
 		return
 	}
 	if len(args) == 0 {
-		if useColor {
+		if term.IsTerminal(int(os.Stdin.Fd())) {
 			runShell()
 			return
 		}
@@ -100,58 +105,78 @@ func main() {
 }
 
 func runScan(root string) {
-	if !*flagJSON {
+	if !*flagJSON && !inShell {
 		printBanner()
 	}
-	var reps []*Report
-	var walked int
-	sp := startSpinner(func() string {
-		return fmt.Sprintf("scanning %s - %d files, %d mach-o", root, walked, len(reps))
-	})
+	var paths []string
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		walked++
-		rep, err := Analyze(p)
-		if err != nil {
-			return nil // not a Mach-O, unreadable, etc - skip
-		}
-		reps = append(reps, rep)
+		paths = append(paths, p)
 		return nil
 	})
-	sp.stop()
 	if err != nil {
 		fatal(err)
 	}
+	reps := analyzePool(paths, func(done, found int) string {
+		return fmt.Sprintf("scanning %s - %d/%d files, %d mach-o", root, done, len(paths), found)
+	})
 	printScan(reps)
 }
 
 func runProcs() {
-	if !*flagJSON {
+	if !*flagJSON && !inShell {
 		printBanner()
 	}
-	var reps []*Report
 	seen := map[string]bool{}
-	paths := procPaths()
-	var done int
-	sp := startSpinner(func() string {
+	var paths []string
+	for _, p := range procPaths() {
+		if !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
+	}
+	reps := analyzePool(paths, func(done, found int) string {
 		return fmt.Sprintf("triaging processes - %d/%d", done, len(paths))
 	})
-	for _, p := range paths {
-		done++
-		if seen[p] {
-			continue
+	printScan(reps)
+}
+
+// analyzePool triages paths across NumCPU workers with a live spinner.
+func analyzePool(paths []string, label func(done, found int) string) []*Report {
+	var done, found atomic.Int64
+	jobs := make(chan string, 64)
+	out := make(chan *Report, 64)
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for p := range jobs {
+				if r, err := analyze(p, false); err == nil {
+					out <- r
+				}
+				done.Add(1)
+			}
+		}()
+	}
+	go func() {
+		for _, p := range paths {
+			jobs <- p
 		}
-		seen[p] = true
-		rep, err := Analyze(p)
-		if err != nil {
-			continue
-		}
-		reps = append(reps, rep)
+		close(jobs)
+	}()
+	go func() { wg.Wait(); close(out) }()
+
+	sp := startSpinner(func() string { return label(int(done.Load()), int(found.Load())) })
+	var reps []*Report
+	for r := range out {
+		reps = append(reps, r)
+		found.Add(1)
 	}
 	sp.stop()
-	printScan(reps)
+	return reps
 }
 
 func printScan(reps []*Report) {
